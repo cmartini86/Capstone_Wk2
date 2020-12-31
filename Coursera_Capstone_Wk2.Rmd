@@ -1,0 +1,229 @@
+---
+title: 'Coursera Capstone: Week 2'
+output:
+  html_document: default
+  word_document: default
+  pdf_document: default
+---
+
+## Coursera Capstone: Word Frequency:
+Project Introduction
+
+The goal of this project is just to display that you’ve gotten used to working with the data and that you are on track to create your prediction algorithm. Please submit a report on R Pubs (http://rpubs.com/) that explains your exploratory analysis and your goals for the eventual app and algorithm. This document should be concise and explain only the major features of the data you have identified and briefly summarize your plans for creating the prediction algorithm and Shiny app in a way that would be understandable to a non-data scientist manager. You should make use of tables and plots to illustrate important summaries of the data set. The motivation for this project is to:
+
+1. Demonstrate that you’ve downloaded the data and have successfully loaded it in.
+2. Create a basic report of summary statistics about the data sets.
+3. Report any interesting findings that you amassed so far.
+4. Get feedback on your plans for creating a prediction algorithm and Shiny app.
+
+## Packages
+Load libraries. These are what are used to produce plots, and gather word frequency values.
+```{r}
+library(tm)
+library(SnowballC)
+library(RCurl)
+library(XML)
+library(quanteda)
+library(ggplot2)
+```
+
+## Read in txt data
+```{r}
+setwd("C:/Coursera/Capstone/US_text")
+
+txt <- file("US_news.txt", open="r")
+US_news <- readLines(txt); close(txt)
+
+txt <- file("US_blogs.txt", open="r")
+US_blogs <- readLines(txt); close(txt) 
+
+txt <- file("US_twitter.txt", open="r")
+US_twitter <- readLines(txt); close(txt)
+```
+
+## Data Statistics
+Set up data and output resulting statistics
+```{r}
+file_stats<- function(text_file, lines) {
+  file_size <- file.info(text_file)[1]/1024^2
+  num_char <- lapply(lines, nchar)
+  max_chars <- which.max(num_char)
+  word_count <- sum(sapply(strsplit(lines, "\\s+"), length))
+  return(c(text_file, format(round(as.double(file_size), 2), nsmall=2), length(lines),max_chars, word_count))
+}
+
+setwd("C:/Coursera/Capstone/US_text")
+US_news_stats<- file_stats("US_news.txt", US_news)
+US_blogs_stats <- file_stats("US_blogs.txt", US_blogs)
+US_twitter_stats<- file_stats("US_twitter.txt", US_twitter)
+
+test_summary <- c(US_news_stats, US_blogs_stats,US_twitter_stats)
+
+df <- data.frame(matrix(unlist(test_summary), nrow=3, byrow=T))
+colnames(df) <- c("Text_file", "Size(MB)", "Line_Count", "Max Line Length", "Words_Count")
+print(df)
+```
+
+## Data Analysis
+Create functions to generate the data corpus, tidy the corpus, and gather the high frquency words.
+```{r}
+gen_corpus<- function(test_file) {
+  gen_corp<- paste(test_file, collapse=" ")
+  gen_corp <- VectorSource(gen_corp)
+  gen_corp <- Corpus(gen_corp)
+}
+
+tidy_corpus <- function(corp_data) {
+  corp_data <- tm_map(corp_data, removeNumbers)
+  corp_data <- tm_map(corp_data, content_transformer(tolower))
+  corp_data <- tm_map(corp_data, removeWords, stopwords("english"))
+  corp_data <- tm_map(corp_data, removePunctuation)
+  corp_data <- tm_map(corp_data, stripWhitespace)
+  return (corp_data)
+}
+
+high_freq_words <- function (corp_data) {
+  term_sparse <- DocumentTermMatrix(corp_data)
+  term_matrix <- as.matrix(term_sparse)   ## convert our term-document-matrix into a normal matrix
+  freq_words <- colSums(term_matrix)
+  freq_words <- as.data.frame(sort(freq_words, decreasing=TRUE))
+  freq_words$word <- rownames(freq_words)
+  colnames(freq_words) <- c("Frequency","word")
+  return (freq_words)
+}
+```
+
+## Bar Chart of High frequency words
+Extract and display high frequency words ranking in descending order in a colorful manner
+```{r}
+#US NEWS High frequency words
+US_news1<-sample(US_news, round(0.1*length(US_news)), replace = F)
+US_news_corp <- gen_corpus(US_news1)
+US_news_corp <- tidy_corpus(US_news_corp)
+US_news_most_used_word <- high_freq_words(US_news_corp)
+US_news_most_used_word1<- US_news_most_used_word[1:15,]
+
+p<-ggplot(data=US_news_most_used_word1, aes(x=reorder(word,Frequency), y=Frequency,
+                                            fill=factor(reorder(word,-Frequency)))) + geom_bar(stat="identity") 
+p + xlab("Word") +labs(title = "Most Frequent Words: US News") + theme(legend.title=element_blank()) + coord_flip()
+```
+
+```{r}
+#US BLOGS high frequency words
+US_blogs1<-sample(US_blogs, round(0.1*length(US_blogs)), replace = F)
+US_blogs_corp <- gen_corpus(US_blogs1)
+US_blogs_corp <- tidy_corpus(US_blogs_corp)
+US_blogs_most_used_word <- high_freq_words(US_blogs_corp)
+US_blogs_most_used_word1<- US_blogs_most_used_word[1:15,]
+
+p<-ggplot(data=US_blogs_most_used_word1, aes(x=reorder(word,Frequency), y=Frequency,
+                                             fill=factor(reorder(word,-Frequency)))) + geom_bar(stat="identity") 
+p + xlab("Word") +labs(title = "Most Frequent Words: US Blogs") + theme(legend.title=element_blank()) + coord_flip()
+```
+
+```{r}
+#US Twitter High frequency words 
+US_twitter1<-sample(US_twitter, round(0.1*length(US_twitter)), replace = F)
+twitter_corp <- gen_corpus(US_twitter1)
+twitter_corp <- tidy_corpus(twitter_corp)
+twitter_most_used_word <- high_freq_words(twitter_corp)
+twitter_most_used_word1<- twitter_most_used_word[1:15,]
+
+p<-ggplot(data=twitter_most_used_word1, aes(x=reorder(word,Frequency), y=Frequency,
+                                            fill=factor(reorder(word,-Frequency)))) + geom_bar(stat="identity") 
+p + xlab("Word") +labs(title = "Most Frequent Words: Twitter") + theme(legend.title=element_blank()) + coord_flip()
+```
+
+## Word Count Analysis
+Creation of a batch of word matrices with unigram (1-word), bigram (2-word combinations), and trigrams (3-word combinations). These model sets improve the predictability of the data analysis.
+```{r}
+#US news high frequency words    
+US_news1<-sample(US_news, round(0.01*length(US_news)), replace = F)
+US_News_tokens<- tokens(US_news1,what ="word", remove_numbers = TRUE, 
+                        remove_punct = TRUE, remove_separators = TRUE, remove_symbols =TRUE )
+US_News_tokens <- tokens_tolower(US_News_tokens)
+US_News_tokens <- tokens_select(US_News_tokens, stopwords(),selection ="remove")
+
+US_News_unigram <- tokens_ngrams(US_News_tokens, n=1) 
+US_News_unigram.dfm <- dfm(US_News_unigram, tolower =TRUE, remove = stopwords("english"), 
+                           remove_punct = TRUE)    
+
+US_News_bigram <- tokens_ngrams(US_News_tokens, n=2)  
+US_News_bigram.dfm <- dfm(US_News_bigram, tolower =TRUE, remove = stopwords("english"), 
+                          remove_punct = TRUE)
+
+US_News_trigram <- tokens_ngrams(US_News_tokens, n=3)  
+US_News_trigram.dfm <- dfm(US_News_trigram, tolower =TRUE, remove = stopwords("english"), 
+                           remove_punct = TRUE)
+
+topfeatures(US_News_unigram.dfm, 15)  # Top 15 US News unigram words
+```
+
+```{r}
+topfeatures(US_News_bigram.dfm, 15)  # Top 15 US News bigram words
+```
+
+```{r}
+topfeatures(US_News_trigram.dfm, 15)  # Top 15 US News trigram words
+```
+
+```{r}
+#US Blog
+US_blogs1<-sample(US_blogs, round(0.02*length(US_blogs)), replace = F)
+US_blogs_tokens<- tokens(US_blogs1,what ="word", remove_numbers = TRUE, 
+                         remove_punct = TRUE, remove_separators = TRUE, remove_symbols =TRUE )
+US_blogs_tokens <- tokens_tolower(US_blogs_tokens)
+US_blogs_tokens <- tokens_select(US_blogs_tokens, stopwords(),selection ="remove")
+
+US_blogs_unigram <- tokens_ngrams(US_blogs_tokens, n=1)  
+US_blogs_unigram.dfm <- dfm(US_blogs_unigram, tolower =TRUE, remove = stopwords("english"), 
+                            remove_punct = TRUE)    
+
+US_blogs_bigram <- tokens_ngrams(US_blogs_tokens, n=2)  
+US_blogs_bigram.dfm <- dfm(US_blogs_bigram, tolower =TRUE, remove = stopwords("english"), 
+                           remove_punct = TRUE)
+
+US_blogs_trigram <- tokens_ngrams(US_blogs_tokens, n=3)  
+US_blogs_trigram.dfm <- dfm(US_blogs_trigram, tolower =TRUE, remove = stopwords("english"), 
+                            remove_punct = TRUE)
+topfeatures(US_blogs_unigram.dfm, 15)  # Top 15 US blogs unigram words
+```
+
+```{r}
+topfeatures(US_blogs_bigram.dfm, 15)  # Top 15 US blogs bigram words
+```
+
+```{r}
+topfeatures(US_blogs_trigram.dfm, 15)  # Top 15 US blogs trigram words
+```
+
+```{r}
+#US Twitter
+US_twitter1<-sample(US_twitter, round(0.02*length(US_twitter)), replace = F)
+twitter_tokens<- tokens(US_twitter1,what ="word", remove_numbers = TRUE, 
+                        remove_punct = TRUE, remove_separators = TRUE, remove_symbols =TRUE )
+twitter_tokens <- tokens_tolower(twitter_tokens)
+twitter_tokens <- tokens_select(twitter_tokens, stopwords(),selection ="remove")
+
+twitter_unigram <- tokens_ngrams(twitter_tokens, n=1)
+twitter_unigram.dfm <- dfm(twitter_unigram, tolower =TRUE, remove = stopwords("english"), 
+                           remove_punct = TRUE)    
+
+twitter_bigram <- tokens_ngrams(twitter_tokens, n=2)
+twitter_bigram.dfm <- dfm(twitter_bigram, tolower =TRUE, remove = stopwords("english"), 
+                          remove_punct = TRUE)
+
+twitter_trigram <- tokens_ngrams(twitter_tokens, n=3)
+twitter_trigram.dfm <- dfm(twitter_trigram, tolower =TRUE, remove = stopwords("english"), 
+                           remove_punct = TRUE)
+
+topfeatures(twitter_unigram.dfm, 15)  # Top 15 US Twitter unigram words
+```
+
+```{r}
+topfeatures(twitter_bigram.dfm, 15)  # Top 15 US Twitter bigram words
+```
+
+```{r}
+topfeatures(twitter_trigram.dfm, 15)  # Top 15 US Twitter trigram words
+````
